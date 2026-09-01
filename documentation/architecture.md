@@ -3,32 +3,46 @@
 ## Diagram Arsitektur
 
 ```
-┌─────────────────────┐         ┌─────────────────────┐
-│   Frontend (Next.js)│         │   Backend (Laravel)  │
-│   Port: 3000        │◄───────►│   Port: 8000         │
-│                     │  HTTP   │                      │
-│  ┌───────────────┐  │  API    │  ┌───────────────┐   │
-│  │ React Pages   │  │  (JWT)  │  │ Controllers   │   │
-│  │ - Login       │  │         │  │ - Auth        │   │
-│  │ - Tasks       │  │         │  │ - Task        │   │
-│  │ - Comments    │  │         │  │ - Comment     │   │
-│  │ - Attachments │  │         │  │ - Attachment  │   │
-│  └───────────────┘  │         │  │ - Notification│   │
-│                     │         │  └───────┬───────┘   │
-│  ┌───────────────┐  │         │          │           │
-│  │ Components    │  │         │  ┌───────▼───────┐   │
-│  │ - NotifBell   │  │         │  │ Models (JWT)  │   │
-│  │ - Attachments │  │         │  │ - User        │   │
-│  └───────────────┘  │         │  │ - Task        │   │
-│                     │         │  │ - TaskComment │   │
-│  ┌───────────────┐  │         │  │ - Attachment  │   │
-│  │ Libraries     │  │         │  │ - Notification│   │
-│  │ - axios.js    │  │         │  └───────┬───────┘   │
-│  │ - SWR         │  │         │          │           │
-│  └───────────────┘  │         │  ┌───────▼───────┐   │
-└─────────────────────┘         │  │ Database (SQL)│   │
-                                │  └───────────────┘   │
-                                └─────────────────────┘
+┌─────────────────────────┐                        ┌───────────────────────────┐
+│   Frontend (Next.js 15) │                        │   Backend (Laravel 12)     │
+│   Port: 3000            │                        │   Port: 8000               │
+│                         │    HTTP API (REST)      │                            │
+│  ┌───────────────────┐  │  ◄──────────────────►  │  ┌──────────────────────┐  │
+│  │ React Pages       │  │    Authorization:       │  │ Controllers          │  │
+│  │ - Login           │  │    Bearer <JWT Token>   │  │ - AuthController     │  │
+│  │ - Tasks Board     │  │                        │  │ - TaskController     │  │
+│  │ - Comments        │  │                        │  │ - TaskCommentCtrl    │  │
+│  │ - Attachments     │  │                        │  │ - TaskAttachmentCtrl │  │
+│  └───────────────────┘  │                        │  │ - NotificationCtrl   │  │
+│                         │                        │  └──────────┬───────────┘  │
+│  ┌───────────────────┐  │                        │             │              │
+│  │ Components        │  │                        │  ┌──────────▼───────────┐  │
+│  │ - NotificationBell│  │                        │  │ Models (JWT Subject) │  │
+│  │ - AttachmentList  │  │                        │  │ - User               │  │
+│  └───────────────────┘  │                        │  │ - Task               │  │
+│                         │   WebSocket (ws://8080) │  │ - TaskComment        │  │
+│  ┌───────────────────┐  │  ◄──────────────────►  │  │ - TaskAttachment     │  │
+│  │ Libraries         │  │   Laravel Echo +        │  │ - AppNotification    │  │
+│  │ - axios.js        │  │   Pusher Protocol       │  └──────────┬───────────┘  │
+│  │ - echo.js (Echo)  │  │                        │             │              │
+│  │ - SWR (cache)     │  │                        │  ┌──────────▼───────────┐  │
+│  └───────────────────┘  │                        │  │ Database (MySQL)     │  │
+└─────────────────────────┘                        │  │ transcosmos_task_db  │  │
+                                                   │  └──────────────────────┘  │
+                                                   │                            │
+                           ┌─────────────────────┐ │  ┌──────────────────────┐  │
+                           │ Queue Worker         │ │  │ Events (Broadcast)   │  │
+                           │ php artisan          │◄┤  │ - TaskUpdated        │  │
+                           │   queue:work         │ │  │ - CommentAdded       │  │
+                           │                      │ │  │ - NotificationSent   │  │
+                           │ Jobs:                │ │  └──────────────────────┘  │
+                           │ - ProcessTask-       │ │                            │
+                           │   Attachment         │ │  ┌──────────────────────┐  │
+                           │   (virus scan +      │ │  │ Laravel Reverb       │  │
+                           │    thumbnail GD)     │ │  │ WebSocket Server     │  │
+                           └─────────────────────┘ │  │ Port: 8080           │  │
+                                                   │  └──────────────────────┘  │
+                                                   └───────────────────────────┘
 ```
 
 ## Alur Autentikasi (JWT)
@@ -36,10 +50,10 @@
 1. Pengguna mengirimkan permintaan `POST /api/auth/login` berisi kredensial (email & password).
 2. Backend memvalidasi kredensial via `Auth::guard('api')->attempt($credentials)`.
 3. Backend mengembalikan respons JSON berisi data pengguna dan JWT Token (`token`).
-4. Axios response interceptor di frontend menangkap `token` dan menyimpannya di client-side (`localStorage`).
+4. Frontend menyimpan `token` di `localStorage` dan data `user` di `localStorage`.
 5. Axios request interceptor secara dinamis menginjeksikan header `Authorization: Bearer <token>` pada setiap permintaan API berikutnya.
 6. Logout (`POST /api/auth/logout`) mem-blacklist token di server dan menghapus token dari `localStorage` di client-side.
-7. Jika token kedaluwarsa atau tidak valid, backend mengembalikan `401 Unauthorized` JSON, dan response interceptor di frontend melakukan pembersihan `localStorage` serta me-redirect pengguna ke halaman login (`/login`).
+7. Jika token kedaluwarsa atau tidak valid, backend mengembalikan `401 Unauthorized` JSON (dikonfigurasi di `bootstrap/app.php`), dan response interceptor di frontend melakukan pembersihan `localStorage` serta me-redirect pengguna ke halaman login (`/login`).
 
 ## Keputusan Arsitektur: JWT dengan localStorage (Architecture Decision Record)
 
@@ -76,7 +90,46 @@ Spesifikasi wajib pengujian mensyaratkan implementasi autentikasi berbasis JWT m
 - Ketika request menghasilkan error `401 Unauthorized`, response interceptor pada `lib/axios.js` secara otomatis:
   1. Menghapus `token` dari `localStorage`
   2. Menghapus `user` dari `localStorage`
-  3. Mengarahkan halaman ke `/login` (`window.location.href = '/login'`), yang secara otomatis memutus siklus auto-polling dari SWR dan komponen `NotificationBell.jsx`.
+  3. Mengarahkan halaman ke `/login` (`window.location.href = '/login'`), yang secara otomatis menghentikan WebSocket subscription Echo dan membersihkan cache SWR.
+
+---
+
+## Alur Real-Time (WebSockets via Laravel Reverb & Echo)
+
+### Arsitektur Komunikasi
+1. Backend mendispatch event setelah modifikasi data berhasil di-commit ke database.
+2. Laravel Reverb (WebSocket server di port `8080`) menerima event dan menyiarkannya ke subscriber.
+3. Frontend mendengarkan event via Laravel Echo (Pusher protocol) dan memanggil `mutate()` SWR untuk memperbarui UI secara instan tanpa polling.
+
+### Private Channels & Events
+
+| Channel | Format | Otorisasi | Events yang Diterima |
+|---|---|---|---|
+| `user.{userId}` | `private-user.{id}` | User ID harus cocok | `TaskUpdated`, `NotificationSent` |
+| `tasks.{taskId}` | `private-tasks.{id}` | User harus `created_by` atau `assigned_user_id` | `TaskUpdated`, `CommentAdded` |
+
+### Endpoint Autentikasi Broadcasting
+- `POST /api/broadcasting/auth` — Endpoint otomatis dari `Broadcast::routes()`, dilindungi middleware `auth:api`. Digunakan oleh Echo client untuk mengautentikasi subscription ke private channels menggunakan JWT token.
+
+### Komponen Frontend yang Menggunakan WebSocket
+
+| Komponen | Channel | Event | Aksi |
+|---|---|---|---|
+| `NotificationBell.jsx` | `user.{userId}` | `NotificationSent` | Toast alert + `mutate()` |
+| `tasks/page.jsx` | `user.{userId}` | `TaskUpdated` | `mutate()` (refresh task list) |
+| `[taskId]/comments/page.jsx` | `tasks.{taskId}` | `CommentAdded` | `mutate()` (refresh comments) |
+
+---
+
+## Alur Background Job (Queue Processing)
+
+1. User mengupload file lampiran via `POST /api/tasks/{task}/attachments`.
+2. File disimpan di storage dengan status awal `pending`.
+3. Job `ProcessTaskAttachment` di-dispatch ke database queue setelah `DB::commit()`.
+4. Queue worker (`php artisan queue:work`) memproses job secara asinkron:
+   - **Simulasi virus scan** (`sleep(2)`)
+   - **Thumbnail generation** (PHP GD native) jika `mime_type` berawalan `image/`
+5. Status attachment diperbarui menjadi `processed` (berhasil) atau `failed` (gagal).
 
 ---
 
@@ -90,6 +143,7 @@ Spesifikasi wajib pengujian mensyaratkan implementasi autentikasi berbasis JWT m
 | Edit Comment | Hanya pemilik komentar (`user_id`) |
 | Delete Comment | Pemilik komentar ATAU `created_by` task (moderasi) |
 | Delete Attachment | `uploaded_by` ATAU `created_by` task |
+| Subscribe WebSocket Channel `tasks.{taskId}` | `created_by` ATAU `assigned_user_id` |
 
 ---
 
@@ -111,6 +165,7 @@ task_comments
 task_attachments
 ├── id, task_id (FK→tasks), uploaded_by (FK→users)
 ├── file_name, file_path, file_size, mime_type
+├── status (string, default: 'pending') — 'pending' | 'processed' | 'failed'
 ├── timestamps
 
 app_notifications

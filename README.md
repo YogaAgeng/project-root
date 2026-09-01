@@ -13,8 +13,8 @@ Sistem manajemen tugas berbasis web yang memungkinkan pengguna membuat, mengelol
 | **Authentication** | JSON Web Token (JWT via header `Authorization: Bearer <token>`) |
 | **WebSockets** | Laravel Reverb & Laravel Echo (Pusher Protocol) |
 | **Queue** | Laravel Database Queue (`QUEUE_CONNECTION=database`) |
-| **Database** | MySQL / SQLite |
-| **Styling** | Vanilla CSS (Dark Glassmorphism) |
+| **Database** | MySQL (`transcosmos_task_db`) |
+| **Styling** | Vanilla CSS (Dark Glassmorphism) & Tailwind CSS |
 
 ---
 
@@ -35,7 +35,8 @@ Sistem manajemen tugas berbasis web yang memungkinkan pengguna membuat, mengelol
 
 ### 1. Prasyarat Ekstensi PHP
 
-Sebelum menjalankan aplikasi, pastikan ekstensi berikut sudah aktif di `php.ini` Anda:
+Sebelum menjalankan aplikasi, pastikan modul **MySQL di XAMPP Control Panel sudah AKTIF (Started)** dan ekstensi berikut sudah aktif di `php.ini` Anda:
+- `extension=pdo_mysql` — Driver database MySQL.
 - `extension=gd` — Diperlukan untuk background job pemrosesan thumbnail gambar.
 - `extension=sodium` — Diperlukan untuk enkripsi JWT.
 - `extension=pcntl` — Diperlukan saat menjalankan Laravel Reverb WebSocket server (di Linux/macOS/WSL atau mode standalone).
@@ -52,17 +53,24 @@ cd backend
 cp .env.example .env
 php artisan key:generate
 php artisan jwt:secret
-php artisan migrate --seed
+php artisan migrate:fresh --seed
 ```
 
-Pastikan variabel Reverb & Queue di `backend/.env` terkonfigurasi:
+Pastikan variabel Reverb, Database, & Queue di `backend/.env` terkonfigurasi:
 ```env
+DB_CONNECTION=mysql
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_DATABASE=transcosmos_task_db
+DB_USERNAME=root
+DB_PASSWORD=
+
 BROADCAST_CONNECTION=reverb
 QUEUE_CONNECTION=database
 
-REVERB_APP_ID=transcosmos_task_app
-REVERB_APP_KEY=reverbkey1234567890ab
-REVERB_APP_SECRET=reverbsecret1234567890ab
+REVERB_APP_ID=949759
+REVERB_APP_KEY=tkpus4smxngsyzsukohd
+REVERB_APP_SECRET=lf9gbmxq2oj3cplujs8m
 REVERB_HOST="localhost"
 REVERB_PORT=8080
 REVERB_SCHEME=http
@@ -71,7 +79,7 @@ REVERB_SCHEME=http
 Dan variabel di `frontend/.env.local`:
 ```env
 NEXT_PUBLIC_API_URL=http://localhost:8000/api
-NEXT_PUBLIC_REVERB_APP_KEY=reverbkey1234567890ab
+NEXT_PUBLIC_REVERB_APP_KEY=tkpus4smxngsyzsukohd
 NEXT_PUBLIC_REVERB_HOST=localhost
 NEXT_PUBLIC_REVERB_PORT=8080
 NEXT_PUBLIC_REVERB_SCHEME=http
@@ -134,6 +142,7 @@ project-root/
 │   └── tests/        # PHPUnit automated tests
 ├── frontend/         # Next.js 15 SPA (React 19, Echo)
 │   ├── src/          # Pages, Components, lib/echo.js, lib/axios.js
+│   ├── tests/        # Vitest & React Testing Library tests
 │   └── package.json
 ├── documentation/    # Dokumentasi sistem & API
 │   ├── architecture.md

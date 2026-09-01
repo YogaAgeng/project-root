@@ -125,6 +125,8 @@ Buat task baru.
 
 **Response:** `201 Created`
 
+**Event Dispatched:** `TaskUpdated` → channels `private-tasks.{taskId}` dan `private-user.{assignedUserId}`
+
 ---
 
 ### PUT/PATCH `/api/tasks/{task}` 🔒
@@ -141,12 +143,16 @@ Update task. Hanya `created_by` atau `assigned_user_id`.
 
 **Response:** `200 OK` | `403 Forbidden`
 
+**Event Dispatched:** `TaskUpdated` → channels `private-tasks.{taskId}` dan `private-user.{userId}`
+
 ---
 
 ### DELETE `/api/tasks/{task}` 🔒
 Hapus task. Hanya `created_by`.
 
 **Response:** `200 OK` | `403 Forbidden`
+
+**Event Dispatched:** `TaskUpdated` → channel `private-user.{userId}`
 
 ---
 
@@ -193,6 +199,8 @@ Tambah komentar. Hanya `created_by` atau `assigned_user_id` dari task.
 
 **Response:** `201 Created` | `403 Forbidden`
 
+**Event Dispatched:** `CommentAdded` → channel `private-tasks.{taskId}`
+
 ---
 
 ### PUT/PATCH `/api/comments/{comment}` 🔒
@@ -219,15 +227,50 @@ Hapus komentar. Pemilik komentar ATAU `created_by` task (moderasi).
 ### GET `/api/tasks/{task}/attachments` 🔒
 Daftar lampiran task.
 
+**Response:** `200 OK`
+```json
+{
+  "attachments": [
+    {
+      "id": 1,
+      "file_name": "document.pdf",
+      "file_size": 204800,
+      "mime_type": "application/pdf",
+      "status": "processed",
+      "uploaded_by": 1,
+      "created_at": "2026-09-01T12:00:00.000000Z",
+      "uploader": { "id": 1, "name": "Test User" }
+    }
+  ]
+}
+```
+
+> **Field `status`:** Menunjukkan status pemrosesan background job.
+> - `pending` — File baru diupload, menunggu proses antrean.
+> - `processed` — Virus scan selesai dan thumbnail (jika gambar) berhasil dibuat.
+> - `failed` — Pemrosesan gagal.
+
 ---
 
 ### POST `/api/tasks/{task}/attachments` 🔒
-Upload lampiran (multipart/form-data).
+Upload lampiran (multipart/form-data). File akan diproses secara asinkron oleh background queue worker.
 
 **Request Body:**
-| Field | Type |
-|-------|------|
-| `file` | File (max 10MB) |
+| Field | Type | Keterangan |
+|-------|------|------------|
+| `file` | File (max 10MB) | File lampiran |
+
+**Response:** `201 Created`
+```json
+{
+  "message": "File uploaded successfully. Processing in background.",
+  "attachment": {
+    "id": 1,
+    "file_name": "photo.jpg",
+    "status": "pending"
+  }
+}
+```
 
 ---
 
@@ -266,6 +309,8 @@ Daftar notifikasi user yang login.
 }
 ```
 
+**Real-Time:** Event `NotificationSent` disiarkan ke channel `private-user.{userId}` saat notifikasi baru dibuat.
+
 ---
 
 ### POST `/api/notifications/{notification}/read` 🔒
@@ -278,4 +323,30 @@ Tandai semua notifikasi sebagai dibaca.
 
 ---
 
-> 🔒 = Memerlukan autentikasi (HttpOnly Cookie atau Bearer Token)
+## Broadcasting Authentication
+
+### POST `/api/broadcasting/auth` 🔒
+Endpoint otomatis dari `Broadcast::routes()` untuk mengautentikasi subscription ke private WebSocket channels. Digunakan secara internal oleh Laravel Echo client.
+
+**Request Body:** (dikirim otomatis oleh Echo)
+```json
+{
+  "socket_id": "123456.789",
+  "channel_name": "private-user.1"
+}
+```
+
+**Response:** `200 OK` (dengan auth signature) | `403 Forbidden`
+
+---
+
+## WebSocket Channels & Events
+
+| Channel | Events | Deskripsi |
+|---|---|---|
+| `private-user.{userId}` | `TaskUpdated`, `NotificationSent` | Update task dan notifikasi real-time untuk user tertentu |
+| `private-tasks.{taskId}` | `TaskUpdated`, `CommentAdded` | Update task dan komentar real-time untuk kolaborator task |
+
+---
+
+> 🔒 = Memerlukan autentikasi JWT (`Authorization: Bearer <token>`)
