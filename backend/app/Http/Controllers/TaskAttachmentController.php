@@ -6,6 +6,7 @@ use App\Jobs\ProcessTaskAttachment;
 use App\Models\Task;
 use App\Models\TaskAttachment;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
 class TaskAttachmentController extends Controller
@@ -43,28 +44,34 @@ class TaskAttachmentController extends Controller
         $uploadedFile = $request->file('file');
         $path = $uploadedFile->store('attachments', 'local');
 
-        $attachment = TaskAttachment::create([
-            'task_id' => $task->id,
-            'file_name' => $uploadedFile->getClientOriginalName(),
-            'file_path' => $path,
-            'file_size' => $uploadedFile->getSize(),
-            'mime_type' => $uploadedFile->getClientMimeType(),
-            'uploaded_by' => $request->user()->id,
-        ]);
+        // Pastikan transaksi database telah di-commit sebelum mendispatch job antrean
+        $attachment = DB::transaction(function () use ($task, $uploadedFile, $path, $request) {
+            $attachment = TaskAttachment::create([
+                'task_id' => $task->id,
+                'file_name' => $uploadedFile->getClientOriginalName(),
+                'file_path' => $path,
+                'file_size' => $uploadedFile->getSize(),
+                'mime_type' => $uploadedFile->getClientMimeType(),
+                'uploaded_by' => $request->user()->id,
+                'status' => 'pending',
+            ]);
 
-        // Dispatch background job for post-upload processing
+            // Trigger Notifikasi jika uploader bukan task creator
+            if ($task->created_by !== $request->user()->id) {
+                \App\Models\AppNotification::notify(
+                    $task->created_by,
+                    'attachment_added',
+                    'Lampiran Baru Diunggah',
+                    $request->user()->name . " mengunggah lampiran '{$attachment->file_name}' pada tugas: {$task->title}",
+                    "/tasks/{$task->id}/attachments"
+                );
+            }
+
+            return $attachment;
+        });
+
+        // Dispatch background job HANYA setelah DB::commit() selesai
         ProcessTaskAttachment::dispatch($attachment);
-
-        // Trigger Notifikasi jika uploader bukan task creator
-        if ($task->created_by !== $request->user()->id) {
-            \App\Models\AppNotification::notify(
-                $task->created_by,
-                'attachment_added',
-                'Lampiran Baru Diunggah',
-                $request->user()->name . " mengunggah lampiran '{$attachment->file_name}' pada tugas: {$task->title}",
-                "/tasks/{$task->id}/attachments"
-            );
-        }
 
         return response()->json([
             'message' => 'File berhasil diunggah.',

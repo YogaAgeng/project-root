@@ -37,7 +37,7 @@ class AppNotification extends Model
     {
         if (! $userId) return null;
 
-        return self::create([
+        $notification = self::create([
             'user_id' => $userId,
             'type' => $type,
             'title' => $title,
@@ -45,5 +45,10 @@ class AppNotification extends Model
             'link' => $link,
             'is_read' => false,
         ]);
+
+        // Broadcast real-time notification event via Reverb
+        broadcast(new \App\Events\NotificationSent($notification));
+
+        return $notification;
     }
 }

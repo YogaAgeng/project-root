@@ -6,20 +6,63 @@ import useSWR from 'swr';
 import apiClient from '@/lib/axios';
 import toast from 'react-hot-toast';
 
+import getEcho from '@/lib/echo';
+
 const fetcher = (url) => apiClient.get(url).then((res) => res.data);
 
 export default function NotificationBell() {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
 
-  // SWR Fetching data notifikasi (auto-poll setiap 15 detik)
+  // SWR Fetching data notifikasi (tanpa auto-polling, dimutasi via WebSocket)
   const { data, mutate } = useSWR('/notifications', fetcher, {
-    refreshInterval: 15000,
-    revalidateOnFocus: true,
+    revalidateOnFocus: false,
   });
 
   const notifications = data?.notifications || [];
   const unreadCount = data?.unread_count || 0;
+
+  // Real-time WebSocket Subscription via Laravel Echo (Reverb)
+  useEffect(() => {
+    let userId = null;
+    try {
+      const savedUser = localStorage.getItem('user');
+      if (savedUser) {
+        userId = JSON.parse(savedUser)?.id;
+      }
+    } catch {
+      // ignore JSON parse error
+    }
+
+    if (!userId) return;
+
+    const echo = getEcho();
+    if (!echo) return;
+
+    const channelName = `user.${userId}`;
+    const channel = echo.private(channelName);
+
+    const handleNotification = (e) => {
+      if (e?.notification?.title) {
+        toast((t) => (
+          <div className="flex flex-col gap-1">
+            <span className="font-semibold text-white">🔔 {e.notification.title}</span>
+            <span className="text-xs text-slate-300">{e.notification.message}</span>
+          </div>
+        ), { duration: 5000 });
+      }
+      mutate();
+    };
+
+    channel.listen('NotificationSent', handleNotification);
+    channel.listen('.NotificationSent', handleNotification);
+
+    // Cleanup: leave channel saat unmount untuk mencegah memory leak
+    return () => {
+      echo.leave(channelName);
+      echo.leaveChannel(`private-${channelName}`);
+    };
+  }, [mutate]);
 
   // Tutup dropdown saat klik di luar
   useEffect(() => {

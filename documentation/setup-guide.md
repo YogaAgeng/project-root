@@ -1,23 +1,29 @@
-# Panduan Setup — Task Management System
+# Panduan Setup Lengkap — Task Management System
 
-## Prasyarat
+Dokumen ini memandu langkah-langkah penyiapan dan eksekusi lokal untuk penguji sistem.
 
-| Software | Versi Minimum |
-|----------|--------------|
-| PHP | 8.2+ |
-| Composer | 2.x |
-| Node.js | 18+ |
-| npm | 9+ |
-| SQLite | 3.x (biasanya sudah termasuk di PHP) |
+---
 
-## 1. Clone Repository
+## 1. Prasyarat Sistem & Ekstensi PHP
 
-```bash
-git clone <repository-url> project-root
-cd project-root
+| Komponen | Versi Minimum | Catatan |
+|---|---|---|
+| **PHP** | 8.2+ | Ekstensi aktif: `pdo_mysql` / `pdo_sqlite`, `sodium`, `gd`, `pcntl` |
+| **Composer** | 2.x | Manajemen paket backend |
+| **Node.js** | 18+ | Runtime frontend Next.js |
+| **npm** | 9+ | Package manager frontend |
+
+### Verifikasi Ekstensi PHP Wajib di `php.ini`
+Buka file `php.ini` Anda (misal `C:\xampp\php\php.ini`) dan pastikan baris berikut **tidak diawali titik koma (;)**:
+```ini
+extension=gd
+extension=sodium
+extension=pcntl ; (pada Linux/WSL/standalone)
 ```
 
-## 2. Setup Backend (Laravel)
+---
+
+## 2. Penyiapan Backend (Laravel 12)
 
 ```bash
 cd backend
@@ -25,87 +31,87 @@ cd backend
 # Install dependencies
 composer install
 
-# Salin environment file
+# Salin konfigurasi environment
 cp .env.example .env
 
-# Generate application key
+# Generate encryption keys
 php artisan key:generate
+php artisan jwt:secret
 
-# Buat database SQLite (jika belum ada)
-touch database/database.sqlite
-
-# Jalankan migrasi dan seeder
+# Eksekusi migrasi tabel dan data awal (seeder)
 php artisan migrate --seed
-
-# Jalankan server
-php artisan serve
 ```
 
-Backend berjalan di **http://localhost:8000**
-
-### Konfigurasi .env Penting
-
+### Konfigurasi Reverb & Queue di `backend/.env`
 ```env
-DB_CONNECTION=sqlite
-DB_DATABASE=/absolute/path/to/backend/database/database.sqlite
+BROADCAST_CONNECTION=reverb
+QUEUE_CONNECTION=database
 
-SANCTUM_STATEFUL_DOMAINS=localhost:3000
-SESSION_DOMAIN=localhost
+REVERB_APP_ID=transcosmos_task_app
+REVERB_APP_KEY=reverbkey1234567890ab
+REVERB_APP_SECRET=reverbsecret1234567890ab
+REVERB_HOST="localhost"
+REVERB_PORT=8080
+REVERB_SCHEME=http
 ```
 
-## 3. Setup Frontend (Next.js)
+---
+
+## 3. Penyiapan Frontend (Next.js 15)
 
 ```bash
 cd frontend
 
-# Install dependencies
+# Install dependencies (termasuk laravel-echo dan pusher-js)
 npm install
-
-# Salin environment file (jika belum ada)
-echo "NEXT_PUBLIC_API_URL=http://localhost:8000" > .env.local
-
-# Jalankan dev server
-npm run dev
 ```
 
-Frontend berjalan di **http://localhost:3000**
+Pastikan file `frontend/.env.local` memiliki variabel berikut:
+```env
+NEXT_PUBLIC_API_URL=http://localhost:8000/api
+NEXT_PUBLIC_REVERB_APP_KEY=reverbkey1234567890ab
+NEXT_PUBLIC_REVERB_HOST=localhost
+NEXT_PUBLIC_REVERB_PORT=8080
+NEXT_PUBLIC_REVERB_SCHEME=http
+```
 
-## 4. Akun Default (dari Seeder)
+---
 
-| Email | Password | Role |
-|-------|----------|------|
-| `test@example.com` | `password` | Test User (ID #1) |
+## 4. Eksekusi 4 Terminal Terpisah (Wajib)
 
-Seeder juga membuat beberapa user tambahan, task, komentar, dan lampiran untuk testing.
+Untuk menguji seluruh fungsionalitas sistem (HTTP API, WebSockets real-time, Background Jobs, dan Frontend UI), buka **4 jendela terminal**:
 
-## 5. Menjalankan Kedua Server Bersamaan
-
-Buka 2 terminal terpisah:
-
-**Terminal 1 — Backend:**
+### 🖥️ Terminal 1 — Laravel HTTP API Server
 ```bash
 cd backend
 php artisan serve
 ```
+*Port:* `http://127.0.0.1:8000`
 
-**Terminal 2 — Frontend:**
+### 🖥️ Terminal 2 — Next.js Frontend Server
 ```bash
 cd frontend
 npm run dev
 ```
+*Port:* `http://localhost:3000`
 
-## 6. Verifikasi Instalasi
+### 🖥️ Terminal 3 — Queue Worker (Background Processing)
+```bash
+cd backend
+php artisan queue:work
+```
+*Fungsi:* Menjalankan job `ProcessTaskAttachment` (simulasi virus scan & thumbnail resize).
 
-1. Buka **http://localhost:3000** di browser
-2. Login dengan `test@example.com` / `password`
-3. Pastikan halaman Task Management Board muncul
-4. Coba buat task baru, tambah komentar, dan upload lampiran
+### 🖥️ Terminal 4 — Laravel Reverb WebSocket Server
+```bash
+cd backend
+php artisan reverb:start
+```
+*Port:* `ws://localhost:8080` (Menerima dan menyiarkan event `TaskUpdated`, `CommentAdded`, `NotificationSent`).
 
-## Troubleshooting
+---
 
-| Masalah | Solusi |
-|---------|--------|
-| CORS error | Pastikan `SANCTUM_STATEFUL_DOMAINS` di `.env` sesuai dengan domain frontend |
-| 401 Unauthorized | Cookie auth mungkin expired, login ulang |
-| SQLite error | Pastikan file `database/database.sqlite` ada dan writable |
-| Port sudah dipakai | Ubah port: `php artisan serve --port=8001` atau `npm run dev -- -p 3001` |
+## 5. Akun Pengujian
+
+- **Email:** `test@example.com`
+- **Password:** `password`

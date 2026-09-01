@@ -5,26 +5,31 @@ use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\TaskAttachmentController;
 use App\Http\Controllers\TaskCommentController;
 use App\Http\Controllers\TaskController;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 /*
 |--------------------------------------------------------------------------
-| Authentication Routes
+| Authentication Routes (JWT)
 |--------------------------------------------------------------------------
 */
-Route::post('/register', [AuthController::class, 'register']);
-Route::post('/login', [AuthController::class, 'login']);
+Route::prefix('auth')->group(function () {
+    Route::post('/login', [AuthController::class, 'login']);
+});
 
 /*
 |--------------------------------------------------------------------------
-| Protected Routes (auth:sanctum)
+| Protected Routes (auth:api)
 |--------------------------------------------------------------------------
 */
-Route::middleware('auth:sanctum')->group(function () {
-    // Auth
-    Route::post('/logout', [AuthController::class, 'logout']);
-    Route::get('/me', [AuthController::class, 'me']);
+Route::middleware('auth:api')->group(function () {
+    // Broadcasting Authentication Route (JWT for Echo Private Channels)
+    \Illuminate\Support\Facades\Broadcast::routes(['middleware' => ['auth:api']]);
+
+    // Auth Protected Endpoints
+    Route::prefix('auth')->group(function () {
+        Route::post('/logout', [AuthController::class, 'logout']);
+        Route::get('/me', [AuthController::class, 'me']);
+    });
 
     // Users Assignment
     Route::get('/users', function () {

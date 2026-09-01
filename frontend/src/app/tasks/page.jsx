@@ -6,6 +6,7 @@ import useSWR from 'swr';
 import { Toaster, toast } from 'react-hot-toast';
 import apiClient from '@/lib/axios';
 import NotificationBell from '@/components/NotificationBell';
+import getEcho from '@/lib/echo';
 
 // SWR Fetcher menggunakan centralized axios instance
 const fetcher = (url) => apiClient.get(url).then((res) => res.data);
@@ -14,8 +15,8 @@ export default function TasksPage() {
   // Current user state untuk otorisasi tampilan (misal tombol hapus)
   const [currentUser, setCurrentUser] = useState(null);
 
-  // Ambil current user dari endpoint /me
-  const { data: authData } = useSWR('/me', fetcher, { revalidateOnFocus: false });
+  // Ambil current user dari endpoint /auth/me
+  const { data: authData } = useSWR('/auth/me', fetcher, { revalidateOnFocus: false });
 
   // Fetch data list user untuk dropdown assignment
   const { data: usersData } = useSWR('/users', fetcher, { revalidateOnFocus: false });
@@ -74,10 +75,35 @@ export default function TasksPage() {
   const queryString = queryParams.toString();
   const swrKey = `/tasks${queryString ? `?${queryString}` : ''}`;
 
-  // Fetch data tasks dengan SWR
+  // Fetch data tasks dengan SWR (tanpa auto-polling, update real-time via WebSocket)
   const { data, error, isLoading, mutate } = useSWR(swrKey, fetcher, {
     revalidateOnFocus: false,
   });
+
+  // Real-time WebSocket Subscription via Laravel Echo
+  useEffect(() => {
+    const userId = currentUser?.id;
+    if (!userId) return;
+
+    const echo = getEcho();
+    if (!echo) return;
+
+    const channelName = `user.${userId}`;
+    const channel = echo.private(channelName);
+
+    const handleTaskUpdated = () => {
+      mutate();
+    };
+
+    channel.listen('TaskUpdated', handleTaskUpdated);
+    channel.listen('.TaskUpdated', handleTaskUpdated);
+
+    // Cleanup saat unmount untuk mencegah memory leak
+    return () => {
+      echo.leave(channelName);
+      echo.leaveChannel(`private-${channelName}`);
+    };
+  }, [currentUser?.id, mutate]);
 
   const tasks = data?.tasks || [];
   const currentPage = data?.current_page || 1;
@@ -209,6 +235,19 @@ export default function TasksPage() {
     }
   };
 
+  // Handler Logout Pengguna
+  const handleLogout = async () => {
+    try {
+      await apiClient.post('/auth/logout');
+    } catch {
+      // Abaikan error jika token sudah expired
+    } finally {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      window.location.href = '/login';
+    }
+  };
+
   // Format Tanggal Statis
   const formatDate = (dateStr) => {
     if (!dateStr) return '-';
@@ -300,13 +339,14 @@ export default function TasksPage() {
                 <span>{isFormOpen ? 'Tutup Form' : 'Tambah Task Baru'}</span>
               </button>
 
-              <Link
-                href="/login"
+              <button
+                type="button"
+                onClick={handleLogout}
                 className="bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium px-4 py-2.5 border border-slate-700 flex items-center gap-2"
               >
                 <span>👤</span>
-                <span>Ganti Akun</span>
-              </Link>
+                <span>Logout</span>
+              </button>
             </div>
           </div>
         </div>

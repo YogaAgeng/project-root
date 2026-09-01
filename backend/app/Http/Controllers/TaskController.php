@@ -91,6 +91,9 @@ class TaskController extends Controller
             );
         }
 
+        // Broadcast real-time event via Reverb
+        broadcast(new \App\Events\TaskUpdated($task, 'created'));
+
         return response()->json([
             'message' => 'Task berhasil dibuat.',
             'task' => $task,
@@ -144,6 +147,9 @@ class TaskController extends Controller
             );
         }
 
+        // Broadcast real-time event via Reverb
+        broadcast(new \App\Events\TaskUpdated($task, 'updated'));
+
         return response()->json([
             'message' => 'Task berhasil diperbarui.',
             'task' => $task,
@@ -163,6 +169,9 @@ class TaskController extends Controller
             403,
             'Hanya pembuat tugas yang berhak menghapus tugas ini.'
         );
+
+        // Broadcast real-time event via Reverb before deleting
+        broadcast(new \App\Events\TaskUpdated($task, 'deleted'));
 
         $task->delete();
 

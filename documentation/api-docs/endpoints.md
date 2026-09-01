@@ -2,38 +2,14 @@
 
 Semua endpoint API berada di `http://localhost:8000/api/`.
 
-Autentikasi menggunakan **HttpOnly Cookie** yang dikirim otomatis setelah login.
+Autentikasi menggunakan **JSON Web Token (JWT)** via header `Authorization: Bearer <token>`.
 
 ---
 
 ## Authentication
 
-### POST `/api/register`
-Daftar akun baru.
-
-**Request Body:**
-```json
-{
-  "name": "John Doe",
-  "email": "john@example.com",
-  "password": "password",
-  "password_confirmation": "password"
-}
-```
-
-**Response:** `201 Created`
-```json
-{
-  "user": { "id": 1, "name": "John Doe", "email": "john@example.com" },
-  "token": "1|abc..."
-}
-```
-> Cookie `auth_token` dikirim sebagai HttpOnly cookie.
-
----
-
-### POST `/api/login`
-Login dan dapatkan token.
+### POST `/api/auth/login`
+Login dan dapatkan JWT token.
 
 **Request Body:**
 ```json
@@ -46,29 +22,32 @@ Login dan dapatkan token.
 **Response:** `200 OK`
 ```json
 {
+  "message": "Login successful.",
   "user": { "id": 1, "name": "Test User", "email": "test@example.com" },
-  "token": "2|xyz..."
+  "token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
 }
 ```
 
 ---
 
-### POST `/api/logout` 🔒
-Logout dan hapus token.
+### POST `/api/auth/logout` 🔒
+Logout dan invalidasi (blacklist) JWT token.
 
 **Response:** `200 OK`
 ```json
-{ "message": "Logged out successfully" }
+{ "message": "Logged out successfully." }
 ```
 
 ---
 
-### GET `/api/me` 🔒
+### GET `/api/auth/me` 🔒
 Dapatkan data user yang sedang login.
 
 **Response:** `200 OK`
 ```json
-{ "id": 1, "name": "Test User", "email": "test@example.com" }
+{
+  "user": { "id": 1, "name": "Test User", "email": "test@example.com" }
+}
 ```
 
 ---

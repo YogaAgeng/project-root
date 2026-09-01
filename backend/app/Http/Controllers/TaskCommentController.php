@@ -83,6 +83,9 @@ class TaskCommentController extends Controller
             );
         }
 
+        // Broadcast real-time event via Reverb
+        broadcast(new \App\Events\CommentAdded($comment));
+
         return response()->json([
             'message' => 'Komentar berhasil ditambahkan.',
             'comment' => $comment,

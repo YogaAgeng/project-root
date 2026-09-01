@@ -21,6 +21,7 @@ class TaskAttachment extends Model
         'file_size',
         'mime_type',
         'uploaded_by',
+        'status',
     ];
 
     /**

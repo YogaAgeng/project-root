@@ -6,6 +6,7 @@ import useSWR from 'swr';
 import { Toaster, toast } from 'react-hot-toast';
 import apiClient from '@/lib/axios';
 import NotificationBell from '@/components/NotificationBell';
+import getEcho from '@/lib/echo';
 
 // SWR Fetcher menggunakan centralized axios instance
 const fetcher = (url) => apiClient.get(url).then((res) => res.data);
@@ -24,7 +25,7 @@ export default function TaskCommentsPage({ params }) {
   const [deletingCommentId, setDeletingCommentId] = useState(null);
 
   // Current user state untuk otorisasi tampilan (Edit & Hapus)
-  const { data: authData } = useSWR('/me', fetcher, { revalidateOnFocus: false });
+  const { data: authData } = useSWR('/auth/me', fetcher, { revalidateOnFocus: false });
   const [currentUser, setCurrentUser] = useState(null);
 
   useEffect(() => {
@@ -45,11 +46,35 @@ export default function TaskCommentsPage({ params }) {
   // State Paginasi Komentar
   const [page, setPage] = useState(1);
 
-  // SWR Fetching komentar task
+  // SWR Fetching komentar task (tanpa auto-polling, dimutasi via WebSocket)
   const swrKey = taskId ? `/tasks/${taskId}/comments${page > 1 ? `?page=${page}` : ''}` : null;
   const { data, error, isLoading, mutate } = useSWR(swrKey, fetcher, {
     revalidateOnFocus: false,
   });
+
+  // Real-time WebSocket Subscription via Laravel Echo
+  useEffect(() => {
+    if (!taskId) return;
+
+    const echo = getEcho();
+    if (!echo) return;
+
+    const channelName = `tasks.${taskId}`;
+    const channel = echo.private(channelName);
+
+    const handleCommentAdded = () => {
+      mutate();
+    };
+
+    channel.listen('CommentAdded', handleCommentAdded);
+    channel.listen('.CommentAdded', handleCommentAdded);
+
+    // Cleanup saat unmount untuk mencegah memory leak
+    return () => {
+      echo.leave(channelName);
+      echo.leaveChannel(`private-${channelName}`);
+    };
+  }, [taskId, mutate]);
 
   const comments = data?.comments || [];
   const taskCreatedBy = data?.task_created_by;

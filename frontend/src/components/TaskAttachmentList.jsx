@@ -58,7 +58,7 @@ export default function TaskAttachmentList({ taskId }) {
   });
 
   // Current user state untuk evaluasi hak akses tombol Hapus
-  const { data: authData } = useSWR('/me', fetcher, { revalidateOnFocus: false });
+  const { data: authData } = useSWR('/auth/me', fetcher, { revalidateOnFocus: false });
   const [currentUser, setCurrentUser] = useState(null);
 
   useEffect(() => {

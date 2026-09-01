@@ -20,11 +20,13 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
-      const response = await apiClient.post('/login', form);
+      const response = await apiClient.post('/auth/login', form);
       const { token, user } = response.data;
 
-      // Simpan metadata user (Non-sensitif) ke localStorage untuk keperluan UI
-      localStorage.removeItem('token'); // Bersihkan token mentah untuk mitigasi XSS
+      // Simpan JWT token dan metadata user ke localStorage
+      if (token) {
+        localStorage.setItem('token', token);
+      }
       localStorage.setItem('user', JSON.stringify(user));
 
       toast.success(`Selamat datang, ${user.name}!`);
