@@ -40,10 +40,10 @@ describe('LoginPage Component', () => {
 
     // a. Render form secara sempurna
     // b. Pastikan elemen input email, password, dan tombol submit ada di dalam DOM
-    expect(screen.getByRole('heading', { name: /masuk ke akun/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /log in/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/email/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/password/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /masuk/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument();
   });
 
   it('handles user typing and successful login with token stored in localStorage', async () => {
@@ -65,7 +65,7 @@ describe('LoginPage Component', () => {
 
     const emailInput = screen.getByLabelText(/email/i);
     const passwordInput = screen.getByLabelText(/password/i);
-    const submitButton = screen.getByRole('button', { name: /masuk/i });
+    const submitButton = screen.getByRole('button', { name: /sign in/i });
 
     // d. Simulasikan pengetikan (user event) pada input dan klik tombol submit
     fireEvent.change(emailInput, { target: { value: 'user@example.com' } });

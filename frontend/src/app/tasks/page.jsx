@@ -7,102 +7,93 @@ import { Toaster, toast } from 'react-hot-toast';
 import apiClient from '@/lib/axios';
 import NotificationBell from '@/components/NotificationBell';
 import getEcho from '@/lib/echo';
+import {
+  LayoutDashboard,
+  ListTodo,
+  Plus,
+  LogOut,
+  Pencil,
+  Trash2,
+  Paperclip,
+  MessageSquare,
+  Calendar,
+  User,
+  ChevronLeft,
+  ChevronRight,
+  X,
+  Clock,
+  CheckCircle2,
+  CircleDot,
+  Ban,
+  RefreshCw,
+  ArrowUpDown,
+  AlertCircle,
+} from 'lucide-react';
 
-// SWR Fetcher menggunakan centralized axios instance
 const fetcher = (url) => apiClient.get(url).then((res) => res.data);
 
+const STATUS_CONFIG = {
+  pending: { label: 'Pending', icon: Clock, dot: 'bg-amber-500' },
+  in_progress: { label: 'In Progress', icon: CircleDot, dot: 'bg-blue-500' },
+  completed: { label: 'Completed', icon: CheckCircle2, dot: 'bg-emerald-500' },
+  cancelled: { label: 'Cancelled', icon: Ban, dot: 'bg-red-500' },
+};
+
+const PRIORITY_CONFIG = {
+  urgent: { label: 'Urgent', dot: 'bg-red-500' },
+  high: { label: 'High', dot: 'bg-orange-500' },
+  medium: { label: 'Medium', dot: 'bg-zinc-400' },
+  low: { label: 'Low', dot: 'bg-zinc-600' },
+};
+
 export default function TasksPage() {
-  // Current user state untuk otorisasi tampilan (misal tombol hapus)
   const [currentUser, setCurrentUser] = useState(null);
-
-  // Ambil current user dari endpoint /auth/me
   const { data: authData } = useSWR('/auth/me', fetcher, { revalidateOnFocus: false });
-
-  // Fetch data list user untuk dropdown assignment
   const { data: usersData } = useSWR('/users', fetcher, { revalidateOnFocus: false });
   const users = usersData?.users || (Array.isArray(usersData) ? usersData : []);
 
   useEffect(() => {
-    if (authData?.user) {
-      setCurrentUser(authData.user);
-    } else if (typeof window !== 'undefined') {
-      const savedUser = localStorage.getItem('user');
-      if (savedUser) {
-        try {
-          setCurrentUser(JSON.parse(savedUser));
-        } catch {
-          // ignore
-        }
-      }
+    if (authData?.user) setCurrentUser(authData.user);
+    else if (typeof window !== 'undefined') {
+      const s = localStorage.getItem('user');
+      if (s) { try { setCurrentUser(JSON.parse(s)); } catch { /* */ } }
     }
   }, [authData]);
 
-  // 1. State Filter, Sort & Paginasi
   const [status, setStatus] = useState('');
   const [sort, setSort] = useState('desc');
   const [page, setPage] = useState(1);
+  const [activeNav, setActiveNav] = useState('all');
 
-  // State Form Modal / Create Task
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [formData, setFormData] = useState({
-    title: '',
-    description: '',
-    status: 'pending',
-    priority: 'medium',
-    due_date: '',
-    assigned_user_id: '',
-  });
+  const [formData, setFormData] = useState({ title: '', description: '', status: 'pending', priority: 'medium', due_date: '', assigned_user_id: '' });
 
-  // State Edit Task
   const [editingTask, setEditingTask] = useState(null);
-  const [editFormData, setEditFormData] = useState({
-    title: '',
-    description: '',
-    status: 'pending',
-    priority: 'medium',
-    due_date: '',
-    assigned_user_id: '',
-  });
+  const [editFormData, setEditFormData] = useState({ title: '', description: '', status: 'pending', priority: 'medium', due_date: '', assigned_user_id: '' });
   const [isUpdating, setIsUpdating] = useState(false);
   const [isDeletingId, setIsDeletingId] = useState(null);
+  const [selectedTask, setSelectedTask] = useState(null);
 
-  // 2. Membentuk query string dinamis untuk SWR Cache Revalidation
   const queryParams = new URLSearchParams();
   if (page > 1) queryParams.set('page', page);
   if (status) queryParams.set('status', status);
   if (sort) queryParams.set('sort', sort);
-  const queryString = queryParams.toString();
-  const swrKey = `/tasks${queryString ? `?${queryString}` : ''}`;
+  const qs = queryParams.toString();
+  const swrKey = `/tasks${qs ? `?${qs}` : ''}`;
+  const { data, error, isLoading, mutate } = useSWR(swrKey, fetcher, { revalidateOnFocus: false });
 
-  // Fetch data tasks dengan SWR (tanpa auto-polling, update real-time via WebSocket)
-  const { data, error, isLoading, mutate } = useSWR(swrKey, fetcher, {
-    revalidateOnFocus: false,
-  });
-
-  // Real-time WebSocket Subscription via Laravel Echo
   useEffect(() => {
     const userId = currentUser?.id;
     if (!userId) return;
-
     const echo = getEcho();
     if (!echo) return;
-
-    const channelName = `user.${userId}`;
-    const channel = echo.private(channelName);
-
-    const handleTaskUpdated = () => {
-      mutate();
-    };
-
-    channel.listen('TaskUpdated', handleTaskUpdated);
-    channel.listen('.TaskUpdated', handleTaskUpdated);
-
-    // Cleanup saat unmount untuk mencegah memory leak
-    return () => {
-      echo.leave(channelName);
-      echo.leaveChannel(`private-${channelName}`);
-    };
+    const ch = `user.${userId}`;
+    const channel = echo.private(ch);
+    const h = () => { mutate(); };
+    channel.listen('TaskUpdated', h);
+    channel.listen('.TaskUpdated', h);
+    return () => { echo.leave(ch); echo.leaveChannel(`private-${ch}`); };
   }, [currentUser?.id, mutate]);
 
   const tasks = data?.tasks || [];
@@ -110,740 +101,365 @@ export default function TasksPage() {
   const lastPage = data?.last_page || 1;
   const totalTasks = data?.total !== undefined ? data.total : tasks.length;
 
-  // Handler input create form
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
-  };
+  const handleInputChange = (e) => { setFormData((p) => ({ ...p, [e.target.name]: e.target.value })); };
+  const handleEditInputChange = (e) => { setEditFormData((p) => ({ ...p, [e.target.name]: e.target.value })); };
 
-  // Handler input edit form
-  const handleEditInputChange = (e) => {
-    const { name, value } = e.target;
-    setEditFormData((prev) => ({ ...prev, [name]: value }));
-  };
-
-  // 3. Handler Submit Create Task
   const handleSubmitTask = async (e) => {
     e.preventDefault();
-    if (!formData.title.trim()) {
-      toast.error('Judul task wajib diisi.');
-      return;
-    }
-
+    if (!formData.title.trim()) { toast.error('Title is required.'); return; }
     setIsSubmitting(true);
     try {
-      await apiClient.post('/tasks', {
-        title: formData.title,
-        description: formData.description || null,
-        status: formData.status,
-        priority: formData.priority,
-        due_date: formData.due_date || null,
-        assigned_user_id: formData.assigned_user_id ? Number(formData.assigned_user_id) : null,
-      });
-
-      toast.success('Task berhasil dibuat!');
-      
-      // Mutate cache SWR agar data otomatis terbarui
+      await apiClient.post('/tasks', { title: formData.title, description: formData.description || null, status: formData.status, priority: formData.priority, due_date: formData.due_date || null, assigned_user_id: formData.assigned_user_id ? Number(formData.assigned_user_id) : null });
+      toast.success('Task created.');
       await mutate();
-
-      // Reset form
-      setFormData({
-        title: '',
-        description: '',
-        status: 'pending',
-        priority: 'medium',
-        due_date: '',
-        assigned_user_id: '',
-      });
+      setFormData({ title: '', description: '', status: 'pending', priority: 'medium', due_date: '', assigned_user_id: '' });
       setIsFormOpen(false);
-    } catch (err) {
-      const errorMessage =
-        err.response?.data?.errors?.title?.[0] ||
-        err.response?.data?.message ||
-        'Gagal membuat task.';
-      toast.error(errorMessage);
-    } finally {
-      setIsSubmitting(false);
-    }
+    } catch (err) { toast.error(err.response?.data?.errors?.title?.[0] || err.response?.data?.message || 'Failed.'); }
+    finally { setIsSubmitting(false); }
   };
 
-  // Buka Modal Edit Task
   const handleOpenEdit = (task) => {
     setEditingTask(task);
-    setEditFormData({
-      title: task.title || '',
-      description: task.description || '',
-      status: task.status || 'pending',
-      priority: task.priority || 'medium',
-      due_date: task.due_date ? task.due_date.substring(0, 10) : '',
-      assigned_user_id: task.assigned_user_id ? String(task.assigned_user_id) : '',
-    });
+    setEditFormData({ title: task.title || '', description: task.description || '', status: task.status || 'pending', priority: task.priority || 'medium', due_date: task.due_date ? task.due_date.substring(0, 10) : '', assigned_user_id: task.assigned_user_id ? String(task.assigned_user_id) : '' });
   };
 
-  // 4. Handler Submit Update Task (PUT)
   const handleUpdateTask = async (e) => {
     e.preventDefault();
-    if (!editFormData.title.trim()) {
-      toast.error('Judul task wajib diisi.');
-      return;
-    }
-
+    if (!editFormData.title.trim()) { toast.error('Title is required.'); return; }
     setIsUpdating(true);
     try {
-      await apiClient.put(`/tasks/${editingTask.id}`, {
-        title: editFormData.title,
-        description: editFormData.description || null,
-        status: editFormData.status,
-        priority: editFormData.priority,
-        due_date: editFormData.due_date || null,
-        assigned_user_id: editFormData.assigned_user_id ? Number(editFormData.assigned_user_id) : null,
-      });
-
-      toast.success('Task berhasil diperbarui.');
+      await apiClient.put(`/tasks/${editingTask.id}`, { title: editFormData.title, description: editFormData.description || null, status: editFormData.status, priority: editFormData.priority, due_date: editFormData.due_date || null, assigned_user_id: editFormData.assigned_user_id ? Number(editFormData.assigned_user_id) : null });
+      toast.success('Task updated.');
       await mutate();
       setEditingTask(null);
-    } catch (err) {
-      const msg =
-        err.response?.data?.message ||
-        err.response?.data?.errors?.title?.[0] ||
-        'Gagal memperbarui task.';
-      toast.error(msg);
-    } finally {
-      setIsUpdating(false);
-    }
+    } catch (err) { toast.error(err.response?.data?.message || 'Failed.'); }
+    finally { setIsUpdating(false); }
   };
 
-  // 5. Handler Hapus Task (DELETE) dengan window.confirm
   const handleDeleteTask = async (task) => {
-    const confirmed = window.confirm(
-      `Apakah Anda yakin ingin menghapus task "${task.title}" (ID #${task.id})?`
-    );
-    if (!confirmed) return;
-
+    if (!window.confirm(`Delete "${task.title}" (#${task.id})?`)) return;
     setIsDeletingId(task.id);
-    try {
-      await apiClient.delete(`/tasks/${task.id}`);
-      toast.success('Task berhasil dihapus.');
-      await mutate();
-    } catch (err) {
-      const msg =
-        err.response?.data?.message ||
-        'Gagal menghapus task. Anda mungkin tidak memiliki hak akses.';
-      toast.error(msg);
-    } finally {
-      setIsDeletingId(null);
-    }
+    try { await apiClient.delete(`/tasks/${task.id}`); toast.success('Deleted.'); if (selectedTask?.id === task.id) setSelectedTask(null); await mutate(); }
+    catch (err) { toast.error(err.response?.data?.message || 'Failed.'); }
+    finally { setIsDeletingId(null); }
   };
 
-  // Handler Logout Pengguna
   const handleLogout = async () => {
-    try {
-      await apiClient.post('/auth/logout');
-    } catch {
-      // Abaikan error jika token sudah expired
-    } finally {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      window.location.href = '/login';
-    }
+    try { await apiClient.post('/auth/logout'); } catch { /* */ }
+    finally { localStorage.removeItem('token'); localStorage.removeItem('user'); window.location.href = '/login'; }
   };
 
-  // Format Tanggal Statis
-  const formatDate = (dateStr) => {
-    if (!dateStr) return '-';
-    return new Date(dateStr).toLocaleDateString('id-ID', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    });
+  const formatDate = (d) => {
+    if (!d) return '—';
+    return new Date(d).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
   };
 
-  // Badge Status Warna Solid (Tanpa Animasi)
-  const getStatusBadge = (st) => {
-    switch (st) {
-      case 'pending':
-        return 'bg-amber-900/60 text-amber-200 border-amber-700';
-      case 'in_progress':
-        return 'bg-blue-900/60 text-blue-200 border-blue-700';
-      case 'completed':
-        return 'bg-emerald-900/60 text-emerald-200 border-emerald-700';
-      case 'cancelled':
-        return 'bg-red-900/60 text-red-200 border-red-700';
-      default:
-        return 'bg-slate-800 text-slate-300 border-slate-700';
-    }
-  };
+  const inputCls = 'w-full bg-black border border-zinc-800 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-zinc-950';
+  const labelCls = 'block text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-1.5';
 
-  // Badge Prioritas Warna Solid (Tanpa Animasi)
-  const getPriorityBadge = (pr) => {
-    switch (pr) {
-      case 'urgent':
-        return 'bg-rose-950 text-rose-300 border-rose-800';
-      case 'high':
-        return 'bg-orange-950 text-orange-300 border-orange-800';
-      case 'medium':
-        return 'bg-slate-800 text-slate-300 border-slate-700';
-      case 'low':
-        return 'bg-zinc-800 text-zinc-400 border-zinc-700';
-      default:
-        return 'bg-slate-800 text-slate-300 border-slate-700';
-    }
-  };
+  const navItems = [
+    { key: '', nav: 'all', label: 'All Tasks', icon: ListTodo },
+    { key: 'pending', nav: 'pending', label: 'Pending', icon: Clock },
+    { key: 'in_progress', nav: 'in_progress', label: 'In Progress', icon: CircleDot },
+    { key: 'completed', nav: 'completed', label: 'Completed', icon: CheckCircle2 },
+    { key: 'cancelled', nav: 'cancelled', label: 'Cancelled', icon: Ban },
+  ];
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 p-4 sm:p-6 md:p-8">
-      <Toaster
-        position="top-right"
-        toastOptions={{
-          style: {
-            background: '#0f172a',
-            color: '#f8fafc',
-            border: '1px solid #334155',
-            borderRadius: '4px',
-            fontSize: '14px',
-          },
-        }}
-      />
+    <div className="h-screen bg-black text-zinc-300 p-4 overflow-hidden">
+      <Toaster position="top-right" toastOptions={{ style: { background: '#09090b', color: '#d4d4d8', border: '1px solid #27272a', borderRadius: '12px', fontSize: '13px' } }} />
 
-      <div className="max-w-6xl mx-auto space-y-6">
-        {/* Top Header */}
-        <div className="border border-slate-800 bg-slate-900/90 backdrop-blur-md p-6">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-3">
-                <span className="text-2xl">📋</span>
-                <h1 className="text-2xl font-bold tracking-wide text-white">
-                  Task Management Board
-                </h1>
-              </div>
-              <p className="text-sm text-slate-400 mt-1">
-                Kelola daftar tugas, lakukan filter status, dan atur lampiran berkas.
-                {currentUser && (
-                  <span className="ml-2 text-xs bg-slate-800 border border-slate-700 px-2 py-0.5 text-blue-400">
-                    Login sebagai: {currentUser.name} (ID #{currentUser.id})
-                  </span>
-                )}
-              </p>
+      {/* EDIT MODAL */}
+      {editingTask && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90">
+          <div className="w-full max-w-2xl bg-zinc-950 border border-zinc-800 rounded-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-zinc-800 p-5">
+              <h2 className="text-sm font-bold text-white uppercase tracking-wider">Edit Task #{editingTask.id}</h2>
+              <button onClick={() => setEditingTask(null)} className="text-zinc-500"><X size={18} /></button>
             </div>
-
-            <div className="flex items-center gap-3">
-              {/* Modul Notifikasi In-App */}
-              <NotificationBell />
-
-              <button
-                type="button"
-                onClick={() => setIsFormOpen(!isFormOpen)}
-                className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2.5 border border-blue-500 flex items-center gap-2"
-              >
-                <span>➕</span>
-                <span>{isFormOpen ? 'Tutup Form' : 'Tambah Task Baru'}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium px-4 py-2.5 border border-slate-700 flex items-center gap-2"
-              >
-                <span>👤</span>
-                <span>Logout</span>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Modal Dialog Edit Task (Fixed Overlay, Kaku, Solid, No Animation) */}
-        {editingTask && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-            <div className="w-full max-w-2xl border-2 border-amber-600 bg-slate-900 p-6 max-h-[90vh] overflow-y-auto">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
-                <div className="flex items-center gap-2">
-                  <span className="text-amber-400 text-lg">✏️</span>
-                  <h2 className="text-base font-bold text-white uppercase tracking-wider">
-                    Edit Task #{editingTask.id}: {editingTask.title}
-                  </h2>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setEditingTask(null)}
-                  className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-400 px-2.5 py-1 border border-slate-700"
-                >
-                  ✕ Tutup
-                </button>
-              </div>
-
-              <form onSubmit={handleUpdateTask} className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="md:col-span-2">
-                    <label className="block text-xs font-semibold uppercase text-slate-400 mb-1">
-                      Judul Task <span className="text-red-400">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      name="title"
-                      required
-                      value={editFormData.title}
-                      onChange={handleEditInputChange}
-                      className="w-full bg-slate-950 border border-slate-700 px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
-                    />
-                  </div>
-
-                  <div className="md:col-span-2">
-                    <label className="block text-xs font-semibold uppercase text-slate-400 mb-1">
-                      Deskripsi Task
-                    </label>
-                    <textarea
-                      name="description"
-                      rows={3}
-                      value={editFormData.description}
-                      onChange={handleEditInputChange}
-                      className="w-full bg-slate-950 border border-slate-700 px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold uppercase text-slate-400 mb-1">
-                      Status
-                    </label>
-                    <select
-                      name="status"
-                      value={editFormData.status}
-                      onChange={handleEditInputChange}
-                      className="w-full bg-slate-950 border border-slate-700 px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
-                    >
-                      <option value="pending">Pending</option>
-                      <option value="in_progress">In Progress</option>
-                      <option value="completed">Completed</option>
-                      <option value="cancelled">Cancelled</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold uppercase text-slate-400 mb-1">
-                      Prioritas
-                    </label>
-                    <select
-                      name="priority"
-                      value={editFormData.priority}
-                      onChange={handleEditInputChange}
-                      className="w-full bg-slate-950 border border-slate-700 px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
-                    >
-                      <option value="low">Low</option>
-                      <option value="medium">Medium</option>
-                      <option value="high">High</option>
-                      <option value="urgent">Urgent</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold uppercase text-slate-400 mb-1">
-                      Due Date (Batas Waktu)
-                    </label>
-                    <input
-                      type="date"
-                      name="due_date"
-                      value={editFormData.due_date}
-                      onChange={handleEditInputChange}
-                      className="w-full bg-slate-950 border border-slate-700 px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold uppercase text-slate-400 mb-1">
-                      Penerima Tugas (Assignee)
-                    </label>
-                    <select
-                      name="assigned_user_id"
-                      value={editFormData.assigned_user_id}
-                      onChange={handleEditInputChange}
-                      className="w-full bg-slate-950 border border-slate-700 px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
-                    >
-                      <option value="">-- Tanpa Penerima (Kosong) --</option>
-                      {users.map((u) => (
-                        <option key={u.id} value={u.id}>
-                          {u.name} (ID #{u.id})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
-                  <button
-                    type="button"
-                    onClick={() => setEditingTask(null)}
-                    className="bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium px-4 py-2 border border-slate-700"
-                  >
-                    Batal
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isUpdating}
-                    className="bg-amber-600 hover:bg-amber-700 disabled:bg-amber-800 text-white text-sm font-semibold px-6 py-2 border border-amber-500"
-                  >
-                    {isUpdating ? 'Memperbarui...' : 'Simpan Perubahan (PUT)'}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
-
-        {/* Form Buat Task (Kaku, Solid, No Animation) */}
-        {isFormOpen && (
-          <div className="border border-slate-800 bg-slate-900/90 backdrop-blur-md p-6">
-            <h2 className="text-base font-bold text-white uppercase tracking-wider mb-4 pb-2 border-b border-slate-800">
-              Form Tambah Task Baru
-            </h2>
-            <form onSubmit={handleSubmitTask} className="space-y-4">
+            <form onSubmit={handleUpdateTask} className="p-5 space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="md:col-span-2">
-                  <label className="block text-xs font-semibold uppercase text-slate-400 mb-1">
-                    Judul Task <span className="text-red-400">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    name="title"
-                    required
-                    value={formData.title}
-                    onChange={handleInputChange}
-                    placeholder="Contoh: Mengimplementasikan integrasi webhook..."
-                    className="w-full bg-slate-950 border border-slate-700 px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-blue-500"
-                  />
-                </div>
-
-                <div className="md:col-span-2">
-                  <label className="block text-xs font-semibold uppercase text-slate-400 mb-1">
-                    Deskripsi Task
-                  </label>
-                  <textarea
-                    name="description"
-                    rows={3}
-                    value={formData.description}
-                    onChange={handleInputChange}
-                    placeholder="Detail deskripsi kebutuhan tugas..."
-                    className="w-full bg-slate-950 border border-slate-700 px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-blue-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold uppercase text-slate-400 mb-1">
-                    Status
-                  </label>
-                  <select
-                    name="status"
-                    value={formData.status}
-                    onChange={handleInputChange}
-                    className="w-full bg-slate-950 border border-slate-700 px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
-                  >
-                    <option value="pending">Pending</option>
-                    <option value="in_progress">In Progress</option>
-                    <option value="completed">Completed</option>
-                    <option value="cancelled">Cancelled</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold uppercase text-slate-400 mb-1">
-                    Prioritas
-                  </label>
-                  <select
-                    name="priority"
-                    value={formData.priority}
-                    onChange={handleInputChange}
-                    className="w-full bg-slate-950 border border-slate-700 px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
-                  >
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High</option>
-                    <option value="urgent">Urgent</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold uppercase text-slate-400 mb-1">
-                    Due Date (Batas Waktu)
-                  </label>
-                  <input
-                    type="date"
-                    name="due_date"
-                    value={formData.due_date}
-                    onChange={handleInputChange}
-                    className="w-full bg-slate-950 border border-slate-700 px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold uppercase text-slate-400 mb-1">
-                    Penerima Tugas (Assignee)
-                  </label>
-                  <select
-                    name="assigned_user_id"
-                    value={formData.assigned_user_id}
-                    onChange={handleInputChange}
-                    className="w-full bg-slate-950 border border-slate-700 px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
-                  >
-                    <option value="">-- Tanpa Penerima (Kosong) --</option>
-                    {users.map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.name} (ID #{u.id})
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <div className="md:col-span-2"><label className={labelCls}>Title *</label><input type="text" name="title" required value={editFormData.title} onChange={handleEditInputChange} className={inputCls} /></div>
+                <div className="md:col-span-2"><label className={labelCls}>Description</label><textarea name="description" rows={3} value={editFormData.description} onChange={handleEditInputChange} className={inputCls} /></div>
+                <div><label className={labelCls}>Status</label><select name="status" value={editFormData.status} onChange={handleEditInputChange} className={inputCls}><option value="pending">Pending</option><option value="in_progress">In Progress</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option></select></div>
+                <div><label className={labelCls}>Priority</label><select name="priority" value={editFormData.priority} onChange={handleEditInputChange} className={inputCls}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="urgent">Urgent</option></select></div>
+                <div><label className={labelCls}>Due Date</label><input type="date" name="due_date" value={editFormData.due_date} onChange={handleEditInputChange} className={inputCls} /></div>
+                <div><label className={labelCls}>Assignee</label><select name="assigned_user_id" value={editFormData.assigned_user_id} onChange={handleEditInputChange} className={inputCls}><option value="">— None —</option>{users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
               </div>
-
-              <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setIsFormOpen(false)}
-                  className="bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium px-4 py-2 border border-slate-700"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white text-sm font-semibold px-6 py-2 border border-blue-500"
-                >
-                  {isSubmitting ? 'Menyimpan...' : 'Simpan Task'}
-                </button>
+              <div className="flex justify-end gap-3 pt-4 border-t border-zinc-800">
+                <button type="button" onClick={() => setEditingTask(null)} className="bg-zinc-800 text-zinc-300 text-sm font-medium px-5 py-2.5 rounded-lg">Cancel</button>
+                <button type="submit" disabled={isUpdating} className="bg-white text-black text-sm font-bold px-6 py-2.5 rounded-lg disabled:opacity-50">{isUpdating ? 'Saving...' : 'Save Changes'}</button>
               </div>
             </form>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* 2. Control Bar: Filter Status & Sort Due Date */}
-        <div className="border border-slate-800 bg-slate-900/90 backdrop-blur-md p-4">
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <span className="text-xs font-semibold uppercase text-slate-400">
-                Filter Status:
-              </span>
-              <select
-                value={status}
-                onChange={(e) => {
-                  setStatus(e.target.value);
-                  setPage(1);
-                }}
-                className="bg-slate-950 border border-slate-700 text-sm text-slate-200 px-3 py-1.5 focus:outline-none focus:border-blue-500"
-              >
-                <option value="">Semua Status</option>
-                <option value="pending">Pending</option>
-                <option value="in_progress">In Progress</option>
-                <option value="completed">Completed</option>
-                <option value="cancelled">Cancelled</option>
-              </select>
-
-              <span className="text-xs font-semibold uppercase text-slate-400 ml-0 sm:ml-4">
-                Urutkan Due Date:
-              </span>
-              <select
-                value={sort}
-                onChange={(e) => {
-                  setSort(e.target.value);
-                  setPage(1);
-                }}
-                className="bg-slate-950 border border-slate-700 text-sm text-slate-200 px-3 py-1.5 focus:outline-none focus:border-blue-500"
-              >
-                <option value="desc">Due Date: Terjauh / Terakhir (DESC)</option>
-                <option value="asc">Due Date: Terdekat / Lebih Awal (ASC)</option>
-              </select>
+      {/* CREATE MODAL */}
+      {isFormOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90">
+          <div className="w-full max-w-2xl bg-zinc-950 border border-zinc-800 rounded-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-zinc-800 p-5">
+              <h2 className="text-sm font-bold text-white uppercase tracking-wider">New Task</h2>
+              <button onClick={() => setIsFormOpen(false)} className="text-zinc-500"><X size={18} /></button>
             </div>
+            <form onSubmit={handleSubmitTask} className="p-5 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="md:col-span-2"><label className={labelCls}>Title *</label><input type="text" name="title" required value={formData.title} onChange={handleInputChange} placeholder="Task title..." className={inputCls} /></div>
+                <div className="md:col-span-2"><label className={labelCls}>Description</label><textarea name="description" rows={3} value={formData.description} onChange={handleInputChange} placeholder="Describe the task..." className={inputCls} /></div>
+                <div><label className={labelCls}>Status</label><select name="status" value={formData.status} onChange={handleInputChange} className={inputCls}><option value="pending">Pending</option><option value="in_progress">In Progress</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option></select></div>
+                <div><label className={labelCls}>Priority</label><select name="priority" value={formData.priority} onChange={handleInputChange} className={inputCls}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="urgent">Urgent</option></select></div>
+                <div><label className={labelCls}>Due Date</label><input type="date" name="due_date" value={formData.due_date} onChange={handleInputChange} className={inputCls} /></div>
+                <div><label className={labelCls}>Assignee</label><select name="assigned_user_id" value={formData.assigned_user_id} onChange={handleInputChange} className={inputCls}><option value="">— None —</option>{users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
+              </div>
+              <div className="flex justify-end gap-3 pt-4 border-t border-zinc-800">
+                <button type="button" onClick={() => setIsFormOpen(false)} className="bg-zinc-800 text-zinc-300 text-sm font-medium px-5 py-2.5 rounded-lg">Cancel</button>
+                <button type="submit" disabled={isSubmitting} className="bg-white text-black text-sm font-bold px-6 py-2.5 rounded-lg disabled:opacity-50">{isSubmitting ? 'Creating...' : 'Create Task'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
-            <div className="text-xs text-slate-400 flex items-center justify-end gap-2">
-              <span>Total: <strong className="text-slate-200">{totalTasks}</strong> task</span>
-              <button
-                type="button"
-                onClick={() => mutate()}
-                title="Refresh Cache SWR"
-                className="bg-slate-800 hover:bg-slate-700 border border-slate-700 px-2.5 py-1 text-slate-300"
-              >
-                🔄 Refresh
+      {/* 3-COLUMN GRID */}
+      <div className="h-[calc(100vh-2rem)] grid grid-cols-1 lg:grid-cols-12 gap-4">
+
+        {/* ═══ LEFT SIDEBAR ═══ */}
+        <div className="lg:col-span-3 h-full bg-zinc-950 border border-zinc-800 rounded-2xl flex flex-col p-4 overflow-hidden">
+          {/* Brand */}
+          <div className="flex items-center gap-2.5 mb-6">
+            <div className="w-9 h-9 bg-white rounded-xl flex items-center justify-center">
+              <LayoutDashboard size={18} className="text-black" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-white tracking-tight leading-none">Task Console</p>
+              {currentUser && <p className="text-[11px] text-zinc-600 mt-0.5">{currentUser.name}</p>}
+            </div>
+          </div>
+
+          {/* Navigation */}
+          <nav className="space-y-1">
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = activeNav === item.nav;
+              return (
+                <button
+                  key={item.nav}
+                  onClick={() => { setActiveNav(item.nav); setStatus(item.key); setPage(1); }}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-sm rounded-lg ${isActive ? 'bg-white text-black font-bold' : 'text-zinc-400 font-medium'}`}
+                >
+                  <Icon size={16} />
+                  <span>{item.label}</span>
+                </button>
+              );
+            })}
+          </nav>
+
+          {/* Divider */}
+          <div className="border-t border-zinc-800 my-4" />
+
+          {/* Sort */}
+          <div className="mb-4">
+            <p className="text-[11px] font-bold uppercase tracking-widest text-zinc-600 mb-2 flex items-center gap-1"><ArrowUpDown size={11} /> Sort by</p>
+            <select value={sort} onChange={(e) => { setSort(e.target.value); setPage(1); }} className="w-full bg-black border border-zinc-800 rounded-lg text-sm text-zinc-300 px-3 py-2 focus:outline-none">
+              <option value="desc">Due Date: Latest</option>
+              <option value="asc">Due Date: Earliest</option>
+            </select>
+          </div>
+
+          {/* Spacer */}
+          <div className="flex-1" />
+
+          {/* Bottom Actions */}
+          <div className="space-y-2">
+            <button onClick={() => setIsFormOpen(true)} className="w-full flex items-center justify-center gap-2 bg-white text-black text-sm font-bold py-3 rounded-xl">
+              <Plus size={16} /> New Task
+            </button>
+            <div className="flex items-center gap-2">
+              <div className="flex-shrink-0"><NotificationBell /></div>
+              <button onClick={handleLogout} className="flex-1 flex items-center justify-center gap-2 bg-zinc-900 border border-zinc-800 text-zinc-400 text-sm font-medium py-2.5 rounded-xl">
+                <LogOut size={14} /> Logout
               </button>
             </div>
           </div>
         </div>
 
-        {/* Daftar Tasks List (Glassmorphism, Kaku/Statis, Link Lampiran, Edit & Hapus) */}
-        {isLoading ? (
-          <div className="border border-slate-800 bg-slate-900/50 p-8 text-center text-slate-400">
-            <span>Memuat data task...</span>
-          </div>
-        ) : error ? (
-          <div className="border border-red-900 bg-red-950/40 p-6 text-center text-red-300">
-            <p className="font-semibold">Gagal memuat data task dari backend.</p>
-            <p className="text-xs text-red-400 mt-1">
-              Pastikan Anda sudah login dan token tersimpan di storage.
-            </p>
-            <div className="mt-4">
-              <Link
-                href="/login"
-                className="bg-red-800 hover:bg-red-700 text-white text-xs font-semibold px-4 py-2 border border-red-700"
-              >
-                Menuju Halaman Login
-              </Link>
+        {/* ═══ MAIN CONTENT ═══ */}
+        <div className="lg:col-span-6 h-full bg-black flex flex-col gap-4 overflow-hidden">
+          {/* Header & Tabs */}
+          <div className="bg-zinc-950 border border-zinc-800 rounded-2xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h1 className="text-lg font-bold text-white tracking-tight">Tasks</h1>
+                <p className="text-xs text-zinc-600 mt-0.5">{totalTasks} total · Page {currentPage}/{lastPage}</p>
+              </div>
+              <button onClick={() => mutate()} className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 text-zinc-400 text-xs font-medium px-3 py-2 rounded-lg">
+                <RefreshCw size={12} /> Refresh
+              </button>
             </div>
-          </div>
-        ) : tasks.length === 0 ? (
-          <div className="border border-slate-800 bg-slate-900/50 p-12 text-center text-slate-500">
-            <span className="text-3xl block mb-2">📭</span>
-            <p className="text-base font-medium text-slate-400">Tidak ada task yang cocok dengan kriteria filter.</p>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {tasks.map((task) => (
-                <div
-                  key={task.id}
-                  className="border border-slate-800 bg-slate-900/80 backdrop-blur-md p-5 flex flex-col justify-between"
+            {/* Tabs */}
+            <div className="flex items-center gap-1">
+              {['all', 'pending', 'in_progress', 'completed'].map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => { setActiveNav(tab); setStatus(tab === 'all' ? '' : tab); setPage(1); }}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-md ${activeNav === tab ? 'bg-zinc-800 text-white' : 'text-zinc-500'}`}
                 >
-                  <div>
-                    <div className="flex items-start justify-between gap-3 mb-2">
-                      <h3 className="text-base font-bold text-white leading-snug">
-                        {task.title}
-                      </h3>
-                      <div className="flex items-center gap-1.5 flex-shrink-0">
-                        <span
-                          className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 border font-mono ${getStatusBadge(
-                            task.status
-                          )}`}
-                        >
-                          {task.status}
-                        </span>
-                        <span
-                          className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 border font-mono ${getPriorityBadge(
-                            task.priority
-                          )}`}
-                        >
-                          {task.priority}
-                        </span>
-                      </div>
-                    </div>
-
-                    {task.description && (
-                      <p className="text-xs text-slate-400 line-clamp-3 mb-4 leading-relaxed">
-                        {task.description}
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="space-y-3 pt-3 border-t border-slate-800/80">
-                    <div className="flex items-center justify-between text-xs text-slate-400">
-                      <div>
-                        <span className="text-slate-500 font-medium">Batas Waktu:</span>{' '}
-                        <strong className="text-slate-300 font-mono">
-                          {formatDate(task.due_date)}
-                        </strong>
-                      </div>
-                      <div>
-                        <span className="text-slate-500 font-medium">Dibuat:</span>{' '}
-                        <span className="text-slate-400 font-mono">
-                          {task.creator?.name || 'Anonim'}
-                        </span>
-                      </div>
-                    </div>
-
-                    {task.assigned_user && (
-                      <div className="text-xs text-slate-400">
-                        <span className="text-slate-500 font-medium">Penerima Tugas:</span>{' '}
-                        <span className="text-blue-400 font-semibold bg-slate-950 px-2 py-0.5 border border-slate-800">
-                          👤 {task.assigned_user.name}
-                        </span>
-                      </div>
-                    )}
-
-                    <div className="grid grid-cols-2 gap-2 pt-1">
-                      <Link
-                        href={`/tasks/${task.id}/attachments`}
-                        className="text-center bg-slate-800 hover:bg-slate-700 text-blue-400 font-semibold py-2 px-2 border border-slate-700 text-xs flex items-center justify-center gap-1.5"
-                      >
-                        <span>📎</span>
-                        <span>Lampiran</span>
-                      </Link>
-                      <Link
-                        href={`/tasks/${task.id}/comments`}
-                        className="text-center bg-slate-800 hover:bg-slate-700 text-emerald-400 font-semibold py-2 px-2 border border-slate-700 text-xs flex items-center justify-center gap-1.5"
-                      >
-                        <span>💬</span>
-                        <span>Komentar</span>
-                      </Link>
-                    </div>
-
-                    <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-800/80">
-                      <button
-                        type="button"
-                        onClick={() => handleOpenEdit(task)}
-                        className="bg-slate-800 hover:bg-slate-700 text-amber-300 font-semibold py-1.5 px-3 border border-slate-700 text-xs flex items-center gap-1.5"
-                      >
-                        <span>✏️</span>
-                        <span>Edit Task</span>
-                      </button>
-
-                      {task.created_by === currentUser?.id && (
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteTask(task)}
-                          disabled={isDeletingId === task.id}
-                          className="bg-red-950/60 hover:bg-red-900 text-red-300 font-semibold py-1.5 px-3 border border-red-800 text-xs flex items-center gap-1.5 disabled:opacity-50"
-                        >
-                          <span>🗑️</span>
-                          <span>{isDeletingId === task.id ? 'Menghapus...' : 'Hapus'}</span>
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
+                  {tab === 'all' ? 'All' : tab === 'in_progress' ? 'In Progress' : tab.charAt(0).toUpperCase() + tab.slice(1)}
+                </button>
               ))}
             </div>
+          </div>
 
-            {/* Kontrol Navigasi Paginasi (Kaku, Solid, No Animation) */}
-            {lastPage > 1 && (
-              <div className="flex items-center justify-between border border-slate-800 bg-slate-900/90 backdrop-blur-md p-4">
-                <div className="text-xs text-slate-400 font-mono">
-                  Halaman <span className="font-bold text-white">{currentPage}</span> dari{' '}
-                  <span className="font-bold text-white">{lastPage}</span> (Total {totalTasks} Task)
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setPage((prev) => Math.max(1, prev - 1))}
-                    disabled={currentPage <= 1}
-                    className="bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-200 text-xs font-semibold px-3 py-1.5 border border-slate-700 flex items-center gap-1"
-                  >
-                    ← Sebelumnya
-                  </button>
-
-                  <div className="flex items-center gap-1">
-                    {Array.from({ length: lastPage }, (_, i) => i + 1).map((p) => (
-                      <button
-                        key={p}
-                        type="button"
-                        onClick={() => setPage(p)}
-                        className={`text-xs font-mono px-2.5 py-1 border ${
-                          p === currentPage
-                            ? 'bg-blue-600 border-blue-500 text-white font-bold'
-                            : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
-                        }`}
-                      >
-                        {p}
-                      </button>
-                    ))}
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => setPage((prev) => Math.min(lastPage, prev + 1))}
-                    disabled={currentPage >= lastPage}
-                    className="bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-200 text-xs font-semibold px-3 py-1.5 border border-slate-700 flex items-center gap-1"
-                  >
-                    Berikutnya →
-                  </button>
-                </div>
+          {/* Task Cards */}
+          <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+            {isLoading ? (
+              <div className="flex items-center justify-center h-full text-zinc-600 text-sm">Loading tasks...</div>
+            ) : error ? (
+              <div className="bg-zinc-950 border border-zinc-800 rounded-2xl p-8 text-center">
+                <AlertCircle size={24} className="text-zinc-600 mx-auto mb-2" />
+                <p className="text-sm text-zinc-400 font-semibold">Failed to load tasks.</p>
+                <Link href="/login" className="inline-block mt-3 bg-white text-black text-xs font-bold px-4 py-2 rounded-lg">Go to Login</Link>
               </div>
+            ) : tasks.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full text-zinc-600">
+                <ListTodo size={32} className="mb-2" />
+                <p className="text-sm">No tasks found.</p>
+              </div>
+            ) : (
+              tasks.map((task) => {
+                const sc = STATUS_CONFIG[task.status] || STATUS_CONFIG.pending;
+                const pc = PRIORITY_CONFIG[task.priority] || PRIORITY_CONFIG.medium;
+                const isSelected = selectedTask?.id === task.id;
+                return (
+                  <button
+                    key={task.id}
+                    type="button"
+                    onClick={() => setSelectedTask(task)}
+                    className={`w-full text-left bg-zinc-950 border rounded-2xl p-4 ${isSelected ? 'border-white' : 'border-zinc-800'}`}
+                  >
+                    <div className="flex items-start gap-3">
+                      {/* Status indicator: 8x8 square */}
+                      <div className={`w-2 h-2 mt-1.5 flex-shrink-0 ${sc.dot}`} />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <span className="text-sm font-bold text-white truncate">{task.title}</span>
+                          <div className={`w-2 h-2 flex-shrink-0 ${pc.dot}`} title={pc.label} />
+                        </div>
+                        {task.description && <p className="text-xs text-zinc-600 truncate mt-0.5">{task.description}</p>}
+                        <div className="flex items-center gap-3 mt-2 text-[11px] text-zinc-600">
+                          <span className="flex items-center gap-1"><Calendar size={11} />{formatDate(task.due_date)}</span>
+                          <span className="flex items-center gap-1"><User size={11} />{task.creator?.name || '?'}</span>
+                          {task.assigned_user && <span>→ {task.assigned_user.name}</span>}
+                        </div>
+                      </div>
+                      <span className="text-[10px] font-mono text-zinc-700 mt-0.5">#{task.id}</span>
+                    </div>
+                  </button>
+                );
+              })
             )}
           </div>
-        )}
+
+          {/* Pagination */}
+          {lastPage > 1 && (
+            <div className="bg-zinc-950 border border-zinc-800 rounded-2xl flex items-center justify-between px-4 py-3">
+              <span className="text-xs text-zinc-600 font-mono">{currentPage}/{lastPage}</span>
+              <div className="flex items-center gap-1">
+                <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={currentPage <= 1} className="bg-zinc-900 text-zinc-400 px-2 py-1.5 rounded-md text-xs disabled:opacity-30 border border-zinc-800"><ChevronLeft size={14} /></button>
+                {Array.from({ length: lastPage }, (_, i) => i + 1).map((p) => (
+                  <button key={p} onClick={() => setPage(p)} className={`px-2.5 py-1.5 text-xs font-mono rounded-md border ${p === currentPage ? 'bg-white text-black border-white font-bold' : 'bg-zinc-900 text-zinc-500 border-zinc-800'}`}>{p}</button>
+                ))}
+                <button onClick={() => setPage((p) => Math.min(lastPage, p + 1))} disabled={currentPage >= lastPage} className="bg-zinc-900 text-zinc-400 px-2 py-1.5 rounded-md text-xs disabled:opacity-30 border border-zinc-800"><ChevronRight size={14} /></button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ═══ RIGHT COLUMN ═══ */}
+        <div className="lg:col-span-3 h-full flex flex-col gap-4 overflow-hidden">
+          {selectedTask ? (
+            <>
+              {/* PRIMARY CARD — High contrast white */}
+              <div className="bg-white text-black rounded-3xl p-6 flex-shrink-0">
+                <p className="text-[11px] font-bold uppercase tracking-widest text-black/40 mb-3">Task Details</p>
+                <h2 className="text-xl font-bold leading-tight tracking-tight">{selectedTask.title}</h2>
+                <p className="text-[11px] font-mono text-black/30 mt-1">ID #{selectedTask.id}</p>
+
+                {selectedTask.description && (
+                  <p className="text-xs text-black/60 leading-relaxed mt-3">{selectedTask.description}</p>
+                )}
+
+                <div className="mt-5 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-black/40 font-semibold">Status</span>
+                    <span className="flex items-center gap-1.5 text-xs font-bold">
+                      <span className={`w-2 h-2 ${STATUS_CONFIG[selectedTask.status]?.dot}`} />
+                      {STATUS_CONFIG[selectedTask.status]?.label || selectedTask.status}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-black/40 font-semibold">Priority</span>
+                    <span className="flex items-center gap-1.5 text-xs font-bold">
+                      <span className={`w-2 h-2 ${PRIORITY_CONFIG[selectedTask.priority]?.dot}`} />
+                      {PRIORITY_CONFIG[selectedTask.priority]?.label || selectedTask.priority}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="mt-5 space-y-2">
+                  <button onClick={() => handleOpenEdit(selectedTask)} className="w-full flex items-center justify-center gap-2 bg-black text-white text-sm font-bold py-2.5 rounded-xl">
+                    <Pencil size={14} /> Edit Task
+                  </button>
+                  {selectedTask.created_by === currentUser?.id && (
+                    <button onClick={() => handleDeleteTask(selectedTask)} disabled={isDeletingId === selectedTask.id} className="w-full flex items-center justify-center gap-2 bg-black/10 text-black text-sm font-bold py-2.5 rounded-xl disabled:opacity-50">
+                      <Trash2 size={14} /> {isDeletingId === selectedTask.id ? 'Deleting...' : 'Delete'}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* SECONDARY CARD — Dark info */}
+              <div className="bg-zinc-900 border border-zinc-800 text-white rounded-3xl p-6 flex-1 overflow-y-auto">
+                <p className="text-[11px] font-bold uppercase tracking-widest text-zinc-500 mb-4">Information</p>
+
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-[11px] text-zinc-600 font-semibold mb-1 flex items-center gap-1"><Calendar size={11} /> Due Date</p>
+                    <p className="text-sm font-mono text-white">{formatDate(selectedTask.due_date)}</p>
+                  </div>
+                  <div>
+                    <p className="text-[11px] text-zinc-600 font-semibold mb-1 flex items-center gap-1"><User size={11} /> Created by</p>
+                    <p className="text-sm text-white">{selectedTask.creator?.name || 'Unknown'}</p>
+                  </div>
+                  {selectedTask.assigned_user && (
+                    <div>
+                      <p className="text-[11px] text-zinc-600 font-semibold mb-1 flex items-center gap-1"><User size={11} /> Assigned to</p>
+                      <p className="text-sm text-white">{selectedTask.assigned_user.name}</p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-6 space-y-2">
+                  <Link href={`/tasks/${selectedTask.id}/attachments`} className="w-full flex items-center justify-center gap-2 bg-zinc-800 text-zinc-300 text-xs font-semibold py-2.5 rounded-xl border border-zinc-700">
+                    <Paperclip size={13} /> Attachments
+                  </Link>
+                  <Link href={`/tasks/${selectedTask.id}/comments`} className="w-full flex items-center justify-center gap-2 bg-zinc-800 text-zinc-300 text-xs font-semibold py-2.5 rounded-xl border border-zinc-700">
+                    <MessageSquare size={13} /> Comments
+                  </Link>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="bg-zinc-950 border border-zinc-800 rounded-3xl flex-1 flex items-center justify-center">
+              <div className="text-center text-zinc-700">
+                <ListTodo size={32} className="mx-auto mb-2" />
+                <p className="text-sm font-medium">Select a task</p>
+                <p className="text-xs text-zinc-800 mt-0.5">to view details</p>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
